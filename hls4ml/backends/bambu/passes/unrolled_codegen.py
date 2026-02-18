@@ -235,6 +235,8 @@ class GenerateUnrolledDenseResource(OptimizerPass):
             weights_resource_pragma = '#pragma HLS RESOURCE variable=weights core=ROM_nP_BRAM'
         elif backend.name == 'Vitis':
             weights_resource_pragma = '#pragma HLS BIND_STORAGE variable=weights type=ROM_NP impl=BRAM'
+        elif backend.name == 'Bambu':
+            weights_resource_pragma = ''
         else:
             raise Exception(f'Unexpected backend {backend.name} in GenerateUnrolledDenseResource optimizer.')
 
