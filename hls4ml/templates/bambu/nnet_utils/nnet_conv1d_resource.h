@@ -31,7 +31,7 @@ void conv_1d_resource_cl(data_T data[CONFIG_T::in_width * CONFIG_T::n_chan],
     //#pragma HLS ARRAY_PARTITION variable=acc complete dim=0
 
 PartitionLoop:
-    #pragma clang loop unroll(full)
+    //#pragma clang loop unroll(full)
     for (unsigned i_part = 0; i_part < CONFIG_T::n_partitions; i_part++) {
         //#pragma HLS UNROLL // We don't want this loop unrolled
 
