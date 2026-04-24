@@ -44,7 +44,7 @@ fi
 
 echo "Using compiler: $($CC --version | head -n1)"
 
-CFLAGS="-O0 -fPIC -fwrapv -fno-strict-overflow"
+CFLAGS="-O3 -fPIC"
 
 # Include -std=c++23 if the compiler supports it (enables half and bfloat16 types, errors otherwise)
 if echo "" | $CC -Werror -fsyntax-only -std=c++23 -xc++ - -o /dev/null &>/dev/null; then
