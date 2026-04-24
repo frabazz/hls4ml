@@ -36,6 +36,18 @@ warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 test_root_path = Path(__file__).parent
 example_model_path = (test_root_path / '../../example-models').resolve()
 
+@pytest.fixture(autouse=True)
+def set_all_seeds():
+    seed = 42
+    import random
+    import numpy as np
+    import tensorflow as tf
+    
+    random.seed(seed)
+    np.random.seed(seed)
+    tf.keras.utils.set_random_seed(seed) # Fondamentale per gli inizializzatori dei pesi
+    # Forza TF a girare in modo deterministico (opzionale ma consigliato per debug estremo)
+    tf.config.experimental.enable_op_determinism()
 
 @pytest.fixture(scope='module')
 def get_jettagging_data():
