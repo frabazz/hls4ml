@@ -71,7 +71,34 @@ template <int W, int I, ap_q_mode Q = AC_TRN, ap_o_mode O = AC_WRAP, int N = 0>
 using ap_fixed = ac_fixed<W, I, true, Q, O>;
 
 template <int W, int I, ap_q_mode Q = AC_TRN, ap_o_mode O = AC_WRAP, int N = 0>
-using ap_ufixed = ac_fixed<W, I, false, Q, O>;
+struct ap_ufixed : public ac_fixed<W, I, false, Q, O> {
+    typedef ac_fixed<W, I, false, Q, O> Base;
+
+    ap_ufixed() : Base() {}
+    
+    template <typename T>
+    ap_ufixed(T v) : Base(v) {
+        apply_custom_saturation(v);
+    }
+
+    
+    template <typename T>
+    ap_ufixed& operator=(T v) {
+        Base::operator=(v); 
+        apply_custom_saturation(v);
+        return *this;
+    }
+
+private:
+    template <typename T>
+    void apply_custom_saturation(T v) {
+        if (I == 0 && O == ac_o_mode::AC_SAT) {
+            if (v >= 1.0) {
+                this->template set_val<AC_VAL_MAX>(); 
+            }
+        }
+    }
+};
 
 #include "ap_int.h"
 
