@@ -37,6 +37,7 @@
 #ifndef __AP_FIXED_H
 #define __AP_FIXED_H
 #include "ac_fixed.h"
+#include <type_traits> 
 
 // rounding to plus infinity
 #define AP_RND ac_q_mode::AC_RND
@@ -74,31 +75,37 @@ template <int W, int I, ap_q_mode Q = AC_TRN, ap_o_mode O = AC_WRAP, int N = 0>
 struct ap_ufixed : public ac_fixed<W, I, false, Q, O> {
     typedef ac_fixed<W, I, false, Q, O> Base;
 
-    ap_ufixed() : Base() {}
-    
+    constexpr ap_ufixed() : Base() {}
+
+
     template <typename T>
-    ap_ufixed(T v) : Base(v) {
+    constexpr ap_ufixed(T v) : Base(v) {
         apply_custom_saturation(v);
     }
 
-    
+
     template <typename T>
-    ap_ufixed& operator=(T v) {
-        Base::operator=(v); 
+    constexpr ap_ufixed& operator=(T v) {
+        Base::operator=(v);
         apply_custom_saturation(v);
         return *this;
     }
 
 private:
-    template <typename T>
-    void apply_custom_saturation(T v) {
-        if (I == 0 && O == ac_o_mode::AC_SAT) {
-            if (v >= 1.0) {
-                this->template set_val<AC_VAL_MAX>(); 
-            }
+
+    template <typename T, int _I = I, ap_o_mode _O = O>
+    constexpr typename std::enable_if<_I == 0 && _O == ac_o_mode::AC_SAT>::type
+    apply_custom_saturation(T v) {
+        if (v >= 1.0) {
+            this->template set_val<AC_VAL_MAX>();
         }
     }
+
+    template <typename T, int _I = I, ap_o_mode _O = O>
+    constexpr typename std::enable_if<!(_I == 0 && _O == ac_o_mode::AC_SAT)>::type
+    apply_custom_saturation(T v) {}
 };
+
 
 #include "ap_int.h"
 
