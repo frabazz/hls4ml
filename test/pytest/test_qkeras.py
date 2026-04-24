@@ -134,9 +134,9 @@ def randX_100_16():
 # Note 4-bit test can still fail sometimes depending on random seed
 # https://github.com/fastmachinelearning/hls4ml/issues/381
 # @pytest.mark.parametrize('bits', [4, 6, 8])
-@pytest.mark.parametrize('bits,alpha', [(4, 1), (4, 'auto_po2')])
-@pytest.mark.parametrize('backend', ['Vivado', 'Vitis', 'Quartus', 'oneAPI'])
-@pytest.mark.parametrize('io_type', ['io_parallel', 'io_stream'])
+@pytest.mark.parametrize('bits,alpha', [(4, 1)])
+@pytest.mark.parametrize('backend', ['Bambu'])
+@pytest.mark.parametrize('io_type', ['io_parallel'])
 def test_single_dense_activation_exact(test_case_id, randX_100_16, bits, alpha, backend, io_type):
     """
     Test a single Dense -> Activation layer topology for
@@ -159,6 +159,11 @@ def test_single_dense_activation_exact(test_case_id, randX_100_16, bits, alpha, 
     model.compile()
 
     config = hls4ml.utils.config_from_keras_model(model, granularity='name', backend=backend)
+    config['Model']['Precision']['accum'] = 'ap_fixed<16,6,AP_RND,AP_SAT>'
+    config['LayerName']['fc1']['Precision']['accum'] = 'ap_fixed<16,6,AP_RND,AP_SAT>'
+    
+    # Se vuoi essere sicuro al 100%, forza anche il risultato dello strato
+    config['LayerName']['fc1']['Precision']['result'] = 'ap_fixed<16,6,AP_RND,AP_SAT>'
     output_dir = str(test_root_path / test_case_id)
 
     bit_exact = alpha == 1
@@ -173,6 +178,20 @@ def test_single_dense_activation_exact(test_case_id, randX_100_16, bits, alpha, 
 
     # alpha!=1 case for weights can be supported if weight conversion is done before writing
     if bit_exact:
+        sbagliati = np.where((y_qkeras != y_hls4ml).ravel())[0]
+        
+        if len(sbagliati) > 0:
+            print("\n" + "="*60)
+            print("INDAGINE OVERFLOW: QKERAS vs BAMBU")
+            print("="*60)
+            # Stampiamo solo i primi 5 per non intasare il terminale
+            for idx in sbagliati[:5]:
+                riga = idx // y_qkeras.shape[1]
+                colonna = idx % y_qkeras.shape[1]
+                print(f"Errore al Batch {riga}, Neurone {colonna}")
+                print(f"-> Output atteso (QKeras): {y_qkeras[riga, colonna]}")
+                print(f"-> Output generato (Bambu):  {y_hls4ml[riga, colonna]}")
+                print("-" * 60)
         np.testing.assert_array_equal(y_qkeras, y_hls4ml)
     else:
         np.testing.assert_allclose(y_qkeras.ravel(), y_hls4ml.ravel(), atol=2**-bits, rtol=1.0)

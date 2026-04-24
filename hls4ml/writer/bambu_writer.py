@@ -45,7 +45,7 @@ class BambuWriter(Writer):
             h_file.write(f'namespace {namespace} {{\n\n')
 
         if write_txt_file:
-            h_file.write('#ifndef __SYNTHESIS__\n')
+            h_file.write('#ifndef __BAMBU__\n')
             h_file.write(var.definition_cpp() + ';\n')
             h_file.write('#else\n')
 
@@ -255,7 +255,7 @@ class BambuWriter(Writer):
                                 newline += '    ' + line + '\n'
                         if model.config.trace_output and layer.get_attr('trace', False):
                             vars = layer.get_variables()
-                            newline += '#ifndef __SYNTHESIS__\n'
+                            newline += '#ifndef __BAMBU__\n'
                             for var in vars:
                                 newline += '    nnet::save_layer_output<{}>({}, "{}", {});\n'.format(
                                     var.type.name, var.name, layer.name, var.size_cpp()
