@@ -37,7 +37,6 @@
 #ifndef __AP_FIXED_H
 #define __AP_FIXED_H
 #include "ac_fixed.h"
-#include <type_traits> 
 
 // rounding to plus infinity
 #define AP_RND ac_q_mode::AC_RND
@@ -72,57 +71,8 @@ template <int W, int I, ap_q_mode Q = AC_TRN, ap_o_mode O = AC_WRAP, int N = 0>
 using ap_fixed = ac_fixed<W, I, true, Q, O>;
 
 template <int W, int I, ap_q_mode Q = AC_TRN, ap_o_mode O = AC_WRAP, int N = 0>
-struct ap_ufixed : public ac_fixed<W, I, false, Q, O> {
-    typedef ac_fixed<W, I, false, Q, O> Base;
-    
+using ap_ufixed = ac_fixed<W, I, false, Q, O>;
 
-    constexpr ap_ufixed() : Base() {}
-    
-    template <int W2, int I2, bool S2, ap_q_mode Q2, ap_o_mode O2>
-    constexpr ap_ufixed(const ac_fixed<W2, I2, S2, Q2, O2>& op)
-        : Base(static_cast<ac_fixed<W2, I2, false, Q2, O2>>(op)) {}
-    
-    template <typename T>
-    constexpr ap_ufixed(T v) : Base(v) {}
-    
-
-    template <typename T, int _I = I, ap_o_mode _O = O>
-    typename std::enable_if<_I == 0 && _O == ac_o_mode::AC_SAT, ap_ufixed&>::type
-    operator=(T v) {
-        if (v >= 1) {
-            this->template set_val<AC_VAL_MAX>();
-        } else {
-            Base::operator=(v);
-        }
-        return *this;
-    }
-    
-    template <int W2, int I2, bool S2, ap_q_mode Q2, ap_o_mode O2, int _I = I, ap_o_mode _O = O>
-    typename std::enable_if<_I == 0 && _O == ac_o_mode::AC_SAT, ap_ufixed&>::type
-    operator=(const ac_fixed<W2, I2, S2, Q2, O2>& op) {
-        if (op >= 1) {
-            this->template set_val<AC_VAL_MAX>();
-        } else {
-            Base::operator=(static_cast<ac_fixed<W2, I2, false, Q2, O2>>(op));
-        }
-        return *this;
-    }
-
-
-    template <typename T, int _I = I, ap_o_mode _O = O>
-    constexpr typename std::enable_if<!(_I == 0 && _O == ac_o_mode::AC_SAT), ap_ufixed&>::type
-    operator=(T v) {
-        Base::operator=(v);
-        return *this;
-    }
-    
-    template <int W2, int I2, bool S2, ap_q_mode Q2, ap_o_mode O2, int _I = I, ap_o_mode _O = O>
-    constexpr typename std::enable_if<!(_I == 0 && _O == ac_o_mode::AC_SAT), ap_ufixed&>::type
-    operator=(const ac_fixed<W2, I2, S2, Q2, O2>& op) {
-        Base::operator=(static_cast<ac_fixed<W2, I2, false, Q2, O2>>(op));
-        return *this;
-    }
-};
 #include "ap_int.h"
 
 #endif

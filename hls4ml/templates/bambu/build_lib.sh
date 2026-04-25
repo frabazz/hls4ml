@@ -35,8 +35,8 @@ if command -v "$APPIMAGE" >/dev/null 2>&1; then
 fi
 
 # If Bambu provides Clang++-16, use it
-if [ -n "$MOUNT_DIR" ] && [ -x "$MOUNT_DIR/usr/compilers/clang-16/bin/clang++-16" ]; then
-    CC="$MOUNT_DIR/usr/compilers/clang-16/bin/clang++-16"
+if [ -n "$MOUNT_DIR" ] && [ -x "$MOUNT_DIR/usr/bin/clang++-16" ]; then
+    CC="$MOUNT_DIR/usr/bin/clang++-16"
 else
     echo "Bambu AppImage not detected. Using fallback compiler."
     CC="$FALLBACK_CC"

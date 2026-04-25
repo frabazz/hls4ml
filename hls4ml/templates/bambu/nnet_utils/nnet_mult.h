@@ -103,12 +103,18 @@ template <class data_T, class res_T, typename CONFIG_T>
 inline typename std::enable_if<
     std::is_same<data_T, ap_uint<1>>::value && !std::is_same<typename CONFIG_T::weight_t, ap_uint<1>>::value, res_T>::type
 cast(typename CONFIG_T::accum_t x) {
-    return (res_T)x;
+  //return (res_T)x;
+  res_T res;
+  res = x;  
+  return res;
 }
 
 template <class data_T, class res_T, typename CONFIG_T>
 inline typename std::enable_if<(!std::is_same<data_T, ap_uint<1>>::value), res_T>::type cast(typename CONFIG_T::accum_t x) {
-    return (res_T)x;
+  //return (res_T)x;
+  res_T res;
+  res = x;  
+  return res;
 }
 
 } // namespace nnet
