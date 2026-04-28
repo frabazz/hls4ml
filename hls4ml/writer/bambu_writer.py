@@ -133,7 +133,6 @@ class BambuWriter(Writer):
         indent = '    '
 
         for line in f.readlines():
-            # Add headers to weights and biases
             if 'myproject' in line:
                 newline = line.replace('myproject', model.config.get_project_name())
 
@@ -195,7 +194,6 @@ class BambuWriter(Writer):
                     newline += '    }\n'
                     newline += '#endif'
 
-            # Add input/output type
             elif '// hls-fpga-machine-learning insert IO' in line:
                 newline = line
                 all_inputs = [i.name for i in model_inputs]
@@ -216,8 +214,6 @@ class BambuWriter(Writer):
                         newline += indent + self._make_array_pragma(i) + '\n'
                     for o in model_outputs:
                         newline += indent + self._make_array_pragma(o) + '\n'
-                    # TODO discussed adding a handle for setting the interface mode for individual input and output arrays
-                    # Probably the handle doesn't need to be exposed to the user but should be just set in hls_model.py
                     newline += indent + '#pragma HLS interface mode=valid port={},{} \n'.format(
                         ','.join(all_inputs), ','.join(all_outputs)
                     )
@@ -263,7 +259,6 @@ class BambuWriter(Writer):
                             newline += '#endif\n'
                         newline += '\n'
 
-            # Just copy line
             else:
                 newline = line
 
@@ -392,8 +387,6 @@ class BambuWriter(Writer):
                 for layer in model.get_layers():
                     layer_precision = layer.get_layer_precision()
                     for type_name, type_var in layer_precision.items():
-                        # Ensure that layer's types doesn't override existing types
-                        # This can happen in case of InplaceVariable types
                         if type_name not in all_precision:
                             all_precision[type_name] = type_var
                 for used_type in all_precision.values():
@@ -622,9 +615,6 @@ class BambuWriter(Writer):
                     top_level += indent + f'm_param_alloc({i}, sizeof({v.name}));\n'
                 for i,v in enumerate(model_outputs):
                     top_level += indent + f'm_param_alloc({i+len(model_inputs)}, sizeof({v.name}));\n'
-                # not sure if this is needed
-                # for i,v in enumerate(bram_vars): 
-                #     top_level += f'm_param_alloc({i}, sizeof({v}));\n'
                 top_level += '#endif\n'
                 top_level += indent + f'{model.config.get_project_name()}({all_vars});\n'
 
@@ -645,7 +635,7 @@ class BambuWriter(Writer):
                     for out in model_outputs:
                         newline += indent + 'nnet::print_result<{}, {}>({}, fout);\n'.format(
                             out.type.name, out.size_cpp(), out.name
-                        )  # TODO enable this
+                        )
 
             elif (
                 '// hls-fpga-machine-learning insert output' in line
@@ -653,7 +643,7 @@ class BambuWriter(Writer):
             ):
                 newline = line
                 tb_stream = model.config.get_writer_config().get('TBOutputStream', 'both')
-                keep_output = str(tb_stream != 'stdout').lower()  # We keep output if we need to write it to file too.
+                keep_output = str(tb_stream != 'stdout').lower()
                 if tb_stream != 'file':
                     for out in model_outputs:
                         newline += indent + 'nnet::print_result<{}, {}>({}, std::cout, {});\n'.format(
@@ -699,6 +689,7 @@ class BambuWriter(Writer):
 
             elif '// hls-fpga-machine-learning insert bram' in line:
                 newline = line
+                newline += '#ifdef  __BAMBU__\n#include <mdpi/mdpi_user.h>\n#endif\n'
                 for bram in model_brams:
                     newline += f'#include "firmware/weights/{bram.name}.h"\n'
 
@@ -730,10 +721,15 @@ class BambuWriter(Writer):
                 bram_vars = ','.join([b.name for b in model_brams])
                 output_vars = ','.join([o.name + '_ap' for o in model_outputs])
 
-                # Concatenate the input, output, and bram variables. Filter out empty/null values
                 all_vars = ','.join(filter(None, [input_vars, output_vars, bram_vars]))
 
-                top_level = indent + f'{model.config.get_project_name()}({all_vars});\n'
+                top_level = '#ifdef  __BAMBU__\n'
+                for i, v in enumerate(model_inputs):
+                    top_level += indent + f'm_param_alloc({i}, sizeof({v.name}_ap));\n'
+                for i, v in enumerate(model_outputs):
+                    top_level += indent + f'm_param_alloc({i+len(model_inputs)}, sizeof({v.name}_ap));\n'
+                top_level += '#endif\n'
+                top_level += indent + f'{model.config.get_project_name()}({all_vars});\n'
                 newline += top_level
 
                 newline += '\n'
@@ -806,6 +802,7 @@ class BambuWriter(Writer):
 
             elif '// hls-fpga-machine-learning insert bram' in line:
                 newline = line
+                newline += '#ifdef  __BAMBU__\n#include <mdpi/mdpi_user.h>\n#endif\n'
                 for bram in model_brams:
                     newline += f'#include "firmware/weights/{bram.name}.h"\n'
 
@@ -848,15 +845,26 @@ class BambuWriter(Writer):
                 output_vars = ''
                 for idx, g in enumerate(model.graphs):
                     if idx == 0:
-                        input_vars = ','.join([i.name + '_ap' for i in g.get_input_variables()])
+                        input_names = [i.name + '_ap' for i in g.get_input_variables()]
+                        input_vars = ','.join(input_names)
                     else:
+                        input_names = [o.name + '_ap' for o in model.graphs[idx-1].get_output_variables()]
                         input_vars = output_vars
                     bram_vars = ','.join(
                         [b.name for b in [var for var in g.get_weight_variables() if var.storage.lower() == 'bram']]
                     )
-                    output_vars = ','.join([o.name + '_ap' for o in g.get_output_variables()])
-                    # Concatenate the input, output, and bram variables. Filter out empty/null values
+                    output_names = [o.name + '_ap' for o in g.get_output_variables()]
+                    output_vars = ','.join(output_names)
+                    
                     all_vars = ','.join(filter(None, [input_vars, output_vars, bram_vars]))
+                    
+                    top_level += '#ifdef  __BAMBU__\n'
+                    for i, v_name in enumerate(input_names):
+                        top_level += indent + f'm_param_alloc({i}, sizeof({v_name}));\n'
+                    for i, v_name in enumerate(output_names):
+                        top_level += indent + f'm_param_alloc({i+len(input_names)}, sizeof({v_name}));\n'
+                    top_level += '#endif\n'
+                    
                     top_level += indent + f'{g.config.get_project_name()}({all_vars});\n'
                 newline += top_level
 
