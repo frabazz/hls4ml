@@ -17,6 +17,15 @@ config_filename = 'hls4ml_config.yml'
 
 class BambuWriter(Writer):
     def print_array_to_cpp(self, var, odir, namespace=None, write_txt_file=True):
+        """Write a weights array to C++ header files.
+
+        Args:
+            var (WeightVariable): Weight to write
+            odir (str): Output directory
+            namespace (str, optional): Writes a namespace for the weights to avoid clashes with global variables.
+            write_txt_file (bool, optional): Write txt files in addition to .h files. Defaults to True.
+        """
+
         h_file = open(f'{odir}/firmware/weights/{var.name}.h', 'w')
         if write_txt_file:
             txt_file = open(f'{odir}/firmware/weights/{var.name}.txt', 'w')
@@ -36,12 +45,14 @@ class BambuWriter(Writer):
             h_file.write(f'namespace {namespace} {{\n\n')
 
         if write_txt_file:
-            h_file.write('#ifndef __BAMBU__\n')
+            h_file.write('#ifndef __SYNTHESIS__\n')
             h_file.write(var.definition_cpp() + ';\n')
             h_file.write('#else\n')
 
         h_file.write(var.definition_cpp() + ' = {')
 
+        # fill c++ array.
+        # not including internal brackets for multidimensional case
         sep = ''
         for x in var:
             h_file.write(sep + x)
@@ -61,11 +72,23 @@ class BambuWriter(Writer):
         h_file.close()
 
     def write_project_dir(self, model):
+        """Write the base project directory
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
         if not os.path.isdir(f'{model.config.get_output_dir()}/firmware/weights'):
             os.makedirs(f'{model.config.get_output_dir()}/firmware/weights')
 
     @staticmethod
     def _make_array_pragma(variable):
+        """
+        Layers in hls_model.py can specify output array partitioning through the `pragma` attribute.
+        If `pragma` is a string: options are 'partition', 'reshape', or 'stream'.
+        If `pragma` is a tuple: (mode, type, factor) where mode is 'partition' or 'reshape', type is
+        'complete', 'cyclic', or 'block', and factor is an integer only used when the type is not 'complete'.
+        """
+
         config = variable.pragma
         if type(config) is tuple:
             mode = config[0]
@@ -92,6 +115,12 @@ class BambuWriter(Writer):
             return f'//#pragma HLS STREAM variable={variable.name} depth={depth}'
 
     def write_project_cpp(self, model):
+        """Write the main architecture source file (myproject.cpp)
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
+
         filedir = os.path.dirname(os.path.abspath(__file__))
 
         f = open(os.path.join(filedir, '../templates/bambu/firmware/myproject.cpp'))
@@ -104,6 +133,7 @@ class BambuWriter(Writer):
         indent = '    '
 
         for line in f.readlines():
+            # Add headers to weights and biases
             if 'myproject' in line:
                 newline = line.replace('myproject', model.config.get_project_name())
 
@@ -121,12 +151,14 @@ class BambuWriter(Writer):
 
             elif '// hls-fpga-machine-learning insert namespace-start' in line:
                 newline = ''
+
                 namespace = model.config.get_writer_config().get('Namespace', None)
                 if namespace is not None:
                     newline += f'namespace {namespace} {{\n'
 
             elif '// hls-fpga-machine-learning insert namespace-end' in line:
                 newline = ''
+
                 namespace = model.config.get_writer_config().get('Namespace', None)
                 if namespace is not None:
                     newline += '}\n'
@@ -163,6 +195,7 @@ class BambuWriter(Writer):
                     newline += '    }\n'
                     newline += '#endif'
 
+            # Add input/output type
             elif '// hls-fpga-machine-learning insert IO' in line:
                 newline = line
                 all_inputs = [i.name for i in model_inputs]
@@ -183,6 +216,8 @@ class BambuWriter(Writer):
                         newline += indent + self._make_array_pragma(i) + '\n'
                     for o in model_outputs:
                         newline += indent + self._make_array_pragma(o) + '\n'
+                    # TODO discussed adding a handle for setting the interface mode for individual input and output arrays
+                    # Probably the handle doesn't need to be exposed to the user but should be just set in hls_model.py
                     newline += indent + '#pragma HLS interface mode=valid port={},{} \n'.format(
                         ','.join(all_inputs), ','.join(all_outputs)
                     )
@@ -220,7 +255,7 @@ class BambuWriter(Writer):
                                 newline += '    ' + line + '\n'
                         if model.config.trace_output and layer.get_attr('trace', False):
                             vars = layer.get_variables()
-                            newline += '#ifndef __BAMBU__\n'
+                            newline += '#ifndef __SYNTHESIS__\n'
                             for var in vars:
                                 newline += '    nnet::save_layer_output<{}>({}, "{}", {});\n'.format(
                                     var.type.name, var.name, layer.name, var.size_cpp()
@@ -228,6 +263,7 @@ class BambuWriter(Writer):
                             newline += '#endif\n'
                         newline += '\n'
 
+            # Just copy line
             else:
                 newline = line
 
@@ -237,6 +273,12 @@ class BambuWriter(Writer):
         fout.close()
 
     def write_project_header(self, model):
+        """Write the main architecture header file (myproject.h)
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
+
         filedir = os.path.dirname(os.path.abspath(__file__))
         f = open(os.path.join(filedir, '../templates/bambu/firmware/myproject.h'))
         fout = open(f'{model.config.get_output_dir()}/firmware/{model.config.get_project_name()}.h', 'w')
@@ -268,12 +310,14 @@ class BambuWriter(Writer):
 
             elif '// hls-fpga-machine-learning insert namespace-start' in line:
                 newline = ''
+
                 namespace = model.config.get_writer_config().get('Namespace', None)
                 if namespace is not None:
                     newline += f'namespace {namespace} {{\n'
 
             elif '// hls-fpga-machine-learning insert namespace-end' in line:
                 newline = ''
+
                 namespace = model.config.get_writer_config().get('Namespace', None)
                 if namespace is not None:
                     newline += '}\n'
@@ -294,7 +338,7 @@ class BambuWriter(Writer):
 
                     newline += (
                         f'\ninline void {model.config.get_project_name()}_emulator('
-                        'inputs_t& inputs, outputs_t& outputs'
+                        'inputs_t& inputs, outputs_t& outputs'  # the inputs_t should ideally be const
                     )
                     if len(model_brams) > 0:
                         newline += ',\n' + brams_def_str
@@ -314,6 +358,11 @@ class BambuWriter(Writer):
         fout.close()
 
     def write_defines(self, model):
+        """Write the C++ type definitions file (defines.h)
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
         filedir = os.path.dirname(os.path.abspath(__file__))
         f = open(os.path.join(filedir, '../templates/bambu/firmware/defines.h'))
         fout = open(f'{model.config.get_output_dir()}/firmware/defines.h', 'w')
@@ -343,6 +392,8 @@ class BambuWriter(Writer):
                 for layer in model.get_layers():
                     layer_precision = layer.get_layer_precision()
                     for type_name, type_var in layer_precision.items():
+                        # Ensure that layer's types doesn't override existing types
+                        # This can happen in case of InplaceVariable types
                         if type_name not in all_precision:
                             all_precision[type_name] = type_var
                 for used_type in all_precision.values():
@@ -350,18 +401,21 @@ class BambuWriter(Writer):
 
             elif '// hls-fpga-machine-learning insert namespace-start' in line:
                 newline = ''
+
                 namespace = model.config.get_writer_config().get('Namespace', None)
                 if namespace is not None:
                     newline += f'namespace {namespace} {{\n'
 
             elif '// hls-fpga-machine-learning insert namespace-end' in line:
                 newline = ''
+
                 namespace = model.config.get_writer_config().get('Namespace', None)
                 if namespace is not None:
                     newline += '}\n'
 
             elif '// hls-fpga-machine-learning insert emulator-defines' in line:
                 newline = line
+
                 if model.config.get_writer_config().get('WriteEmulationConstants', False):
                     if model.config.get_config_value('IOType') == 'io_stream':
                         input_types = [f'hls::stream<{v.type.name}>' for v in model.get_input_variables()]
@@ -380,6 +434,11 @@ class BambuWriter(Writer):
         fout.close()
 
     def write_parameters(self, model):
+        """Write the C++ layer config file (parameters.h)
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
         filedir = os.path.dirname(os.path.abspath(__file__))
         f = open(os.path.join(filedir, '../templates/bambu/firmware/parameters.h'))
         fout = open(f'{model.config.get_output_dir()}/firmware/parameters.h', 'w')
@@ -407,12 +466,14 @@ class BambuWriter(Writer):
 
             elif '// hls-fpga-machine-learning insert namespace-start' in line:
                 newline = ''
+
                 namespace = model.config.get_writer_config().get('Namespace', None)
                 if namespace is not None:
                     newline += f'namespace {namespace} {{\n'
 
             elif '// hls-fpga-machine-learning insert namespace-end' in line:
                 newline = ''
+
                 namespace = model.config.get_writer_config().get('Namespace', None)
                 if namespace is not None:
                     newline += '}\n'
@@ -424,6 +485,11 @@ class BambuWriter(Writer):
         fout.close()
 
     def write_weights(self, model):
+        """Write the weights into header files
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
         namespace = model.config.get_writer_config().get('Namespace', None)
         write_txt = model.config.get_writer_config().get('WriteWeightsTxt', True)
         for layer in model.get_layers():
@@ -433,6 +499,11 @@ class BambuWriter(Writer):
                 )
 
     def write_multigraph_weights(self, model):
+        """Write the weights into header files
+
+        Args:
+            model (MultiModelGraph): the hls4ml multigraph model.
+        """
         namespace = model.config.get_writer_config().get('Namespace', None)
         write_txt = model.config.get_writer_config().get('WriteWeightsTxt', True)
         for g in model.graphs:
@@ -443,11 +514,19 @@ class BambuWriter(Writer):
                     )
 
     def __make_dat_file(self, original_path, project_path):
+        """
+        Convert other input/output data types into a dat file, which is
+        a text file with the falttened matrix printed out. Note that ' ' is
+        assumed to be the delimiter.
+        """
+
+        # Take in data from current supported data files
         if original_path[-3:] == 'npy':
             data = np.load(original_path)
         else:
             raise Exception('Unsupported input/output data files.')
 
+        # Faltten data, just keep first dimension
         data = data.reshape(data.shape[0], -1)
 
         def print_data(f):
@@ -456,10 +535,17 @@ class BambuWriter(Writer):
                     f.write(str(data[i][j]) + ' ')
                 f.write('\n')
 
+        # Print out in dat file
         with open(project_path, 'w') as f:
             print_data(f)
 
     def write_test_bench(self, model):
+        """Write the testbench files (myproject_test.cpp and input/output .dat files)
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
+
         filedir = os.path.dirname(os.path.abspath(__file__))
 
         if not os.path.exists(f'{model.config.get_output_dir()}/tb_data/'):
@@ -492,6 +578,7 @@ class BambuWriter(Writer):
         for line in f.readlines():
             indent = ' ' * (len(line) - len(line.lstrip(' ')))
 
+            # Insert numbers
             if 'myproject' in line:
                 newline = line.replace('myproject', model.config.get_project_name())
 
@@ -527,6 +614,7 @@ class BambuWriter(Writer):
                 output_vars = ','.join([o.name for o in model_outputs])
                 bram_vars = ','.join([b.name for b in model_brams])
 
+                # Concatenate the input, output, and bram variables. Filter out empty/null values
                 all_vars = ','.join(filter(None, [input_vars, output_vars, bram_vars]))
 
                 top_level = '#ifdef  __BAMBU__\n'
@@ -534,6 +622,9 @@ class BambuWriter(Writer):
                     top_level += indent + f'm_param_alloc({i}, sizeof({v.name}));\n'
                 for i,v in enumerate(model_outputs):
                     top_level += indent + f'm_param_alloc({i+len(model_inputs)}, sizeof({v.name}));\n'
+                # not sure if this is needed
+                # for i,v in enumerate(bram_vars): 
+                #     top_level += f'm_param_alloc({i}, sizeof({v}));\n'
                 top_level += '#endif\n'
                 top_level += indent + f'{model.config.get_project_name()}({all_vars});\n'
 
@@ -554,7 +645,7 @@ class BambuWriter(Writer):
                     for out in model_outputs:
                         newline += indent + 'nnet::print_result<{}, {}>({}, fout);\n'.format(
                             out.type.name, out.size_cpp(), out.name
-                        )
+                        )  # TODO enable this
 
             elif (
                 '// hls-fpga-machine-learning insert output' in line
@@ -562,7 +653,7 @@ class BambuWriter(Writer):
             ):
                 newline = line
                 tb_stream = model.config.get_writer_config().get('TBOutputStream', 'both')
-                keep_output = str(tb_stream != 'stdout').lower()
+                keep_output = str(tb_stream != 'stdout').lower()  # We keep output if we need to write it to file too.
                 if tb_stream != 'file':
                     for out in model_outputs:
                         newline += indent + 'nnet::print_result<{}, {}>({}, std::cout, {});\n'.format(
@@ -579,14 +670,16 @@ class BambuWriter(Writer):
             else:
                 newline = line
             fout.write(newline)
-
         f.close()
         fout.close()
 
     def write_bridge(self, model):
         """Write the Python-C++ bridge (myproject_bridge.cpp)
-        AGGIUNTE MODIFICHE PER DEBUG E CASTING ESPLICITI PER BAMBU
+
+        Args:
+            model (ModelGraph): the hls4ml model.
         """
+
         filedir = os.path.dirname(os.path.abspath(__file__))
         f = open(os.path.join(filedir, '../templates/bambu/myproject_bridge.cpp'))
         fout = open(f'{model.config.get_output_dir()}/{model.config.get_project_name()}_bridge.cpp', 'w')
@@ -606,9 +699,6 @@ class BambuWriter(Writer):
 
             elif '// hls-fpga-machine-learning insert bram' in line:
                 newline = line
-                # 1. INIETTIAMO IOSTREAM E LIBRERIE BAMBU
-                newline += '#include <iostream>\n'
-                newline += '#ifdef  __BAMBU__\n#include <mdpi/mdpi_user.h>\n#endif\n'
                 for bram in model_brams:
                     newline += f'#include "firmware/weights/{bram.name}.h"\n'
 
@@ -624,25 +714,11 @@ class BambuWriter(Writer):
             elif '// hls-fpga-machine-learning insert wrapper' in line:
                 dtype = line.split('#', 1)[1].strip()
                 newline = ''
-                
-                # 2. INIETTIAMO I DEBUG E IL CASTING MANUALE PER GLI INPUT
-                newline += indent + f'std::cout << "\\n[BRIDGE DEBUG {dtype.upper()}] Entrato nel bridge." << std::endl;\n'
-                
                 for i in model_inputs:
                     newline += indent + '{var};\n'.format(var=i.definition_cpp(name_suffix='_ap'))
-                    newline += indent + f'std::cout << "[BRIDGE DEBUG {dtype.upper()}] Input grezzo da Python ({i.name}): ";\n'
-                    newline += indent + f'for(int i = 0; i < {i.size_cpp()}; i++) {{\n'
-                    newline += indent + f'    {i.name}_ap[i] = {i.name}[i];\n'
-                    newline += indent + f'    std::cout << {i.name}[i] << " ";\n'
-                    newline += indent + '}\n'
-                    newline += indent + 'std::cout << std::endl;\n'
-                    
-                    newline += indent + f'std::cout << "[BRIDGE DEBUG {dtype.upper()}] Input convertito in AP_FIXED ({i.name}): ";\n'
-                    newline += indent + f'for(int i = 0; i < {i.size_cpp()}; i++) {{\n'
-                    newline += indent + f'    std::cout << {i.name}_ap[i].to_double() << " ";\n'
-                    newline += indent + '}\n'
-                    newline += indent + 'std::cout << std::endl;\n'
-
+                    newline += indent + 'nnet::convert_data<{}, {}, {}>({}, {}_ap);\n'.format(
+                        dtype, i.type.name, i.size_cpp(), i.name, i.name
+                    )
                 newline += '\n'
 
                 for o in model_outputs:
@@ -654,36 +730,18 @@ class BambuWriter(Writer):
                 bram_vars = ','.join([b.name for b in model_brams])
                 output_vars = ','.join([o.name + '_ap' for o in model_outputs])
 
+                # Concatenate the input, output, and bram variables. Filter out empty/null values
                 all_vars = ','.join(filter(None, [input_vars, output_vars, bram_vars]))
 
-                # 3. INIETTIAMO M_PARAM_ALLOC DI BAMBU
-                top_level = '#ifdef  __BAMBU__\n'
-                for i, v in enumerate(model_inputs):
-                    top_level += indent + f'm_param_alloc({i}, sizeof({v.name}_ap));\n'
-                for i, v in enumerate(model_outputs):
-                    top_level += indent + f'm_param_alloc({i+len(model_inputs)}, sizeof({v.name}_ap));\n'
-                top_level += '#endif\n'
-                
-                top_level += indent + f'std::cout << "[BRIDGE DEBUG {dtype.upper()}] Esecuzione myproject()..." << std::endl;\n'
-                top_level += indent + f'{model.config.get_project_name()}({all_vars});\n'
+                top_level = indent + f'{model.config.get_project_name()}({all_vars});\n'
                 newline += top_level
 
                 newline += '\n'
 
-                # 4. INIETTIAMO IL CASTING MANUALE IN USCITA CON TO_DOUBLE()
                 for o in model_outputs:
-                    newline += indent + f'std::cout << "[BRIDGE DEBUG {dtype.upper()}] Output generato (AP_FIXED) ({o.name}): ";\n'
-                    newline += indent + f'for(int i = 0; i < {o.size_cpp()}; i++) {{\n'
-                    newline += indent + f'    {o.name}[i] = {o.name}_ap[i].to_double();\n'
-                    newline += indent + f'    std::cout << {o.name}_ap[i].to_double() << " ";\n'
-                    newline += indent + '}\n'
-                    newline += indent + 'std::cout << std::endl;\n'
-                    
-                    newline += indent + f'std::cout << "[BRIDGE DEBUG {dtype.upper()}] Output finale Python ({dtype}) ({o.name}): ";\n'
-                    newline += indent + f'for(int i = 0; i < {o.size_cpp()}; i++) {{\n'
-                    newline += indent + f'    std::cout << {o.name}[i] << " ";\n'
-                    newline += indent + '}\n'
-                    newline += indent + 'std::cout << std::endl;\n'
+                    newline += indent + 'nnet::convert_data<{}, {}, {}>({}_ap, {});\n'.format(
+                        o.type.name, dtype, o.size_cpp(), o.name, o.name
+                    )
 
             elif '// hls-fpga-machine-learning insert trace_outputs' in line:
                 newline = ''
@@ -700,13 +758,13 @@ class BambuWriter(Writer):
 
             elif '// hls-fpga-machine-learning insert namespace' in line:
                 newline = ''
+
                 namespace = model.config.get_writer_config().get('Namespace', None)
                 if namespace is not None:
                     newline += indent + f'using namespace {namespace};\n'
 
             else:
                 newline = line
-
             fout.write(newline)
 
         f.close()
@@ -717,6 +775,7 @@ class BambuWriter(Writer):
         Args:
             model (MultiModelGraph): the hls4ml multigraph model.
         """
+
         filedir = os.path.dirname(os.path.abspath(__file__))
         f = open(os.path.join(filedir, '../templates/bambu/myproject_bridge.cpp'))
         fout = open(f'{model.config.get_output_dir()}/{model.config.get_project_name()}_bridge.cpp', 'w')
@@ -747,7 +806,6 @@ class BambuWriter(Writer):
 
             elif '// hls-fpga-machine-learning insert bram' in line:
                 newline = line
-                newline += '#ifdef  __BAMBU__\n#include <mdpi/mdpi_user.h>\n#endif\n'
                 for bram in model_brams:
                     newline += f'#include "firmware/weights/{bram.name}.h"\n'
 
@@ -763,14 +821,11 @@ class BambuWriter(Writer):
             elif '// hls-fpga-machine-learning insert wrapper' in line:
                 dtype = line.split('#', 1)[1].strip()
                 newline = ''
-                
-                # MODIFICA LOOP MANUALE
                 for i in model_inputs:
                     newline += indent + '{var};\n'.format(var=i.definition_cpp(name_suffix='_ap'))
-                    newline += indent + f"for(int i = 0; i < {i.size_cpp()}; i++) {{\n"
-                    newline += indent + f"    {i.name}_ap[i] = {i.name}[i];\n"
-                    newline += indent + "}\n"
-                    
+                    newline += indent + 'nnet::convert_data<{}, {}, {}>({}, {}_ap);\n'.format(
+                        dtype, i.type.name, i.size_cpp(), i.name, i.name
+                    )
                 newline += '\n'
 
                 for idx, g in enumerate(model.graphs):
@@ -793,36 +848,29 @@ class BambuWriter(Writer):
                 output_vars = ''
                 for idx, g in enumerate(model.graphs):
                     if idx == 0:
-                        input_names = [i.name + '_ap' for i in g.get_input_variables()]
-                        input_vars = ','.join(input_names)
+                        input_vars = ','.join([i.name + '_ap' for i in g.get_input_variables()])
                     else:
-                        input_names = [o.name + '_ap' for o in model.graphs[idx-1].get_output_variables()]
                         input_vars = output_vars
                     bram_vars = ','.join(
                         [b.name for b in [var for var in g.get_weight_variables() if var.storage.lower() == 'bram']]
                     )
-                    output_names = [o.name + '_ap' for o in g.get_output_variables()]
-                    output_vars = ','.join(output_names)
-                    
+                    output_vars = ','.join([o.name + '_ap' for o in g.get_output_variables()])
+                    # Concatenate the input, output, and bram variables. Filter out empty/null values
                     all_vars = ','.join(filter(None, [input_vars, output_vars, bram_vars]))
-                    
-                    top_level += '#ifdef  __BAMBU__\n'
-                    for i, v_name in enumerate(input_names):
-                        top_level += indent + f'm_param_alloc({i}, sizeof({v_name}));\n'
-                    for i, v_name in enumerate(output_names):
-                        top_level += indent + f'm_param_alloc({i+len(input_names)}, sizeof({v_name}));\n'
-                    top_level += '#endif\n'
-                    
                     top_level += indent + f'{g.config.get_project_name()}({all_vars});\n'
                 newline += top_level
 
                 newline += '\n'
 
-                # MODIFICA LOOP MANUALE USCITA
                 for o in model_outputs:
-                    newline += indent + f"for(int i = 0; i < {o.size_cpp()}; i++) {{\n"
-                    newline += indent + f"    {o.name}[i] = {o.name}_ap[i].to_double();\n"
-                    newline += indent + "}\n"
+                    if len(model.graphs[-1].outputs) == 1:
+                        newline += indent + 'nnet::convert_data<{}, {}, {}>({}_ap, {});\n'.format(
+                            datatype, dtype, o.size_cpp(), o.name, o.name
+                        )
+                    else:
+                        newline += indent + 'nnet::convert_data<{}, {}, {}>({}_ap, {});\n'.format(
+                            o.type.name, dtype, o.size_cpp(), o.name, o.name
+                        )
 
             elif '// hls-fpga-machine-learning insert trace_outputs' in line:
                 newline = ''
@@ -839,6 +887,7 @@ class BambuWriter(Writer):
 
             elif '// hls-fpga-machine-learning insert namespace' in line:
                 newline = ''
+
                 namespace = model.config.get_writer_config().get('Namespace', None)
                 if namespace is not None:
                     newline += indent + f'using namespace {namespace};\n'
@@ -909,7 +958,15 @@ class BambuWriter(Writer):
         fout.close()
 
     def write_build_script(self, model):
+        """Write the Shell build scripts (build_lib.sh, build_tb_exe.sh)
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
+
         filedir = Path(__file__).parent
+
+        # build_bambu.sh
         build_bambu_src = (filedir / '../templates/bambu/build_bambu.sh').resolve()
         build_bambu_dst = Path(f'{model.config.get_output_dir()}/build_bambu.sh').resolve()
         with open(build_bambu_src) as src, open(build_bambu_dst, 'w') as dst:
@@ -917,25 +974,33 @@ class BambuWriter(Writer):
                 dst.write(line)
         build_bambu_dst.chmod(build_bambu_dst.stat().st_mode | stat.S_IEXEC)
 
+        # build_lib.sh
         build_lib_src = (filedir / '../templates/bambu/build_lib.sh').resolve()
         build_lib_dst = Path(f'{model.config.get_output_dir()}/build_lib.sh').resolve()
         with open(build_lib_src) as src, open(build_lib_dst, 'w') as dst:
             for line in src.readlines():
                 line = line.replace('myproject', model.config.get_project_name())
                 line = line.replace('mystamp', model.config.get_config_value('Stamp'))
+
                 dst.write(line)
         build_lib_dst.chmod(build_lib_dst.stat().st_mode | stat.S_IEXEC)
 
+        # build_tb_exe.sh
         build_tb_src = (filedir / '../templates/bambu/build_tb_exe.sh').resolve()
         build_tb_dst = Path(f'{model.config.get_output_dir()}/build_tb_exe.sh').resolve()
         with open(build_tb_src) as src, open(build_tb_dst, 'w') as dst:
             for line in src.readlines():
                 line = line.replace('myproject', model.config.get_project_name())
                 line = line.replace('mystamp', model.config.get_config_value('Stamp'))
+
                 dst.write(line)
         build_tb_dst.chmod(build_tb_dst.stat().st_mode | stat.S_IEXEC)
 
     def write_build_script_multigraph(self, model):
+        """Write the build script (build_lib.sh) for stitched multigraph project
+        Args:
+            model (MultiModelGraph): the hls4ml multigraph model.
+        """
         filedir = Path(__file__).parent
         os.makedirs(model.config.get_output_dir(), exist_ok=True)
         build_lib_src = (filedir / '../templates/bambu/build_lib_multigraph.sh').resolve()
@@ -952,7 +1017,15 @@ class BambuWriter(Writer):
         os.chmod(build_lib_dst, os.stat(build_lib_dst).st_mode | stat.S_IEXEC)
 
     def write_nnet_utils(self, model):
+        """Copy the nnet_utils, AP types headers and any custom source to the project output directory
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
+
+        # nnet_utils
         filedir = os.path.dirname(os.path.abspath(__file__))
+
         srcpath = os.path.join(filedir, '../templates/bambu/nnet_utils/')
         dstpath = f'{model.config.get_output_dir()}/firmware/nnet_utils/'
 
@@ -961,6 +1034,7 @@ class BambuWriter(Writer):
 
         headers = [os.path.basename(h) for h in glob.glob(srcpath + '*.h')]
 
+        # Check if gcem folder is present in nnet_utils, and copy it if so
         gcem_srcpath = os.path.join(srcpath, 'gcem')
         gcem_dstpath = os.path.join(dstpath, 'gcem')
         if os.path.isdir(gcem_srcpath):
@@ -976,7 +1050,9 @@ class BambuWriter(Writer):
         for h in headers:
             copyfile(srcpath + h, dstpath + h)
 
+        # ac_types
         filedir = os.path.dirname(os.path.abspath(__file__))
+
         srcpath = os.path.join(filedir, '../templates/bambu/ac_types/')
         dstpath = f'{model.config.get_output_dir()}/firmware/ac_types/'
 
@@ -985,13 +1061,20 @@ class BambuWriter(Writer):
 
         copytree(srcpath, dstpath)
 
+        # custom source
         filedir = os.path.dirname(os.path.abspath(__file__))
+
         custom_source = model.config.backend.get_custom_source()
         for dst, srcpath in custom_source.items():
             dstpath = f'{model.config.get_output_dir()}/firmware/{dst}'
             copyfile(srcpath, dstpath)
 
     def write_generated_code(self, model):
+        """Write the generated code (nnet_code_gen.h)
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
         path = f'{model.config.get_output_dir()}/firmware/nnet_utils/nnet_code_gen.h'
         f = open(path)
         contents = f.readlines()
@@ -1014,6 +1097,12 @@ class BambuWriter(Writer):
         f.close()
 
     def write_yml(self, model):
+        """Write the config to the YAML file
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
+
         def keras_model_representer(dumper, keras_model):
             model_path = model.config.get_output_dir() + '/keras_model.keras'
             keras_model.save(model_path)
@@ -1021,7 +1110,9 @@ class BambuWriter(Writer):
 
         try:
             import keras
+
             KerasModel = keras.models.Model
+
             yaml.add_multi_representer(KerasModel, keras_model_representer)
         except Exception:
             pass
@@ -1030,6 +1121,12 @@ class BambuWriter(Writer):
             yaml.dump(model.config.config, file)
 
     def write_tar(self, model):
+        """Write the generated project as a .tar.gz archive
+
+        Args:
+            model (ModelGraph): the hls4ml model.
+        """
+
         write_tar = model.config.get_writer_config().get('WriteTar', False)
         if write_tar:
             tar_path = model.config.get_output_dir() + '.tar.gz'
