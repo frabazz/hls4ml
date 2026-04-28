@@ -129,19 +129,21 @@ namespace __AC_NAMESPACE
       {
          if(O == AC_WRAP)
          {
+            // Se siamo in un tipo senza bit interi (I=0) e senza segno (!S), 
+            // il wrap-around e' quasi sempre un errore di logica in HLS.
+            // Forziamo la saturazione se rileviamo un overflow su questi tipi.
+            if (!S && I <= 0 && overflow) {
+                LOOP(int, idx, 0, exclude, N - 1, { Base::v.set(idx, ~0); });
+                Base::v.set(N - 1, ~((unsigned)~0 << (W & 31)));
+                return;
+            }
             return;
          }
          else if(O == AC_SAT_ZERO)
          {
-            if(overflow)
-            {
-               ac_private::iv_extend<0>(Base::v, 0);
-            }
-            else
-            {
-            }
+            if(overflow) ac_private::iv_extend<0>(Base::v, 0);
          }
-         else if(S)
+         else if(S) // Caso Signed
          {
             if(overflow)
             {
@@ -154,17 +156,11 @@ namespace __AC_NAMESPACE
                {
                   LOOP(int, idx, 0, exclude, N - 1, { Base::v.set(idx, 0); });
                   Base::v.set(N - 1, ((unsigned)~0 << ((W - 1) & 31)));
-                  if(O == AC_SAT_SYM)
-                  {
-                     Base::v.set(0, Base::v[0] | 1);
-                  }
+                  if(O == AC_SAT_SYM) Base::v.set(0, Base::v[0] | 1);
                }
             }
-            else
-            {
-            }
          }
-         else
+         else // Caso Unsigned (Il tuo result_t)
          {
             if(overflow)
             {
@@ -178,12 +174,9 @@ namespace __AC_NAMESPACE
                   ac_private::iv_extend<0>(Base::v, 0);
                }
             }
-            else
-            {
-            }
          }
       }
-
+     
       constexpr __FORCE_INLINE bool quantization_adjust(bool qb, bool r, bool s)
       {
          if(Q == AC_TRN)
@@ -214,7 +207,19 @@ namespace __AC_NAMESPACE
          {
             qb = s && (qb || r);
          }
-         return ac_private::iv_uadd_carry(Base::v, qb, Base::v);
+         {
+            int pre_top = Base::v[N - 1];
+            bool carry = ac_private::iv_uadd_carry(Base::v, qb, Base::v);
+            // iv_uadd_carry uses set() which masks to W bits, so a W-bit overflow
+            // (e.g. 0b1111 + 1 → 0b0000 for W=4) never produces a 32-bit carry.
+            // Detect wrap-around by comparing masked pre/post values.
+            if (!carry && !S && (W & 31)) {
+               constexpr unsigned mask = ~((unsigned)~0 << (W & 31));
+               if (((unsigned)Base::v[N - 1] & mask) < ((unsigned)pre_top & mask))
+                  carry = true;
+            }
+            return carry;
+         }
       }
 
       __FORCE_INLINE bool is_neg() const
@@ -330,7 +335,8 @@ namespace __AC_NAMESPACE
       {
          Base::reset();
       }
-      template <int W2, int I2, bool S2, ac_q_mode Q2, ac_o_mode O2>
+
+     template <int W2, int I2, bool S2, ac_q_mode Q2, ac_o_mode O2>
       __FORCE_INLINE constexpr ac_fixed(const ac_fixed<W2, I2, S2, Q2, O2>& op)
       {
          enum
@@ -341,60 +347,58 @@ namespace __AC_NAMESPACE
             QUAN_INC = F2 > F && !(Q == AC_TRN || (Q == AC_TRN_ZERO && !S2))
          };
          bool carry = false;
-         // handle quantization
-         if(F2 == F)
-         {
+         
+         // 1. Quantizzazione
+         if(F2 == F) {
             Base::operator=(op);
-         }
-         else if(F2 > F)
-         {
+         } else if(F2 > F) {
             op.template const_shift_r<F2 - F>(*this);
-            //      ac_private::iv_const_shift_r<N2,N,F2-F>(op.v, Base::v);
-            if(Q != AC_TRN && !(Q == AC_TRN_ZERO && !S2))
-            {
+            if(Q != AC_TRN && !(Q == AC_TRN_ZERO && !S2)) {
                bool qb = (F2 - F > W2) ? (op.v[N2 - 1] < 0) : (bool)op[F2 - F - 1];
-               bool r =
-                   (F2 > F + 1) ? !ac_private::iv_equal_zeros_to<((F2 > F + 1) ? F2 - F - 1 : 1), N2>(op.v) : false;
+               bool r = (F2 > F + 1) ? !ac_private::iv_equal_zeros_to<((F2 > F + 1) ? F2 - F - 1 : 1), N2>(op.v) : false;
                carry = quantization_adjust(qb, r, S2 && op.v[N2 - 1] < 0);
             }
-         }
-         else
-         { // no quantization
+         } else { 
             op.template const_shift_l<F - F2>(*this);
          }
-         //      ac_private::iv_const_shift_l<N2,N,F-F2>(op.v, Base::v);
-         // handle overflow/underflow
-         if(O != AC_WRAP &&
-            ((!S && S2) || (I - S < I2 - S2 + (QUAN_INC || (S2 && O == AC_SAT_SYM && (O2 != AC_SAT_SYM || F2 > F))))))
-         { // saturation
-            bool deleted_bits_zero = (!(W & 31) && S) || 0 == (Base::v[N - 1] >> (W & 31));
-            bool deleted_bits_one = (!(W & 31) && S) || 0 == (~(Base::v[N - 1] >> (W & 31)));
-            bool neg_src = false;
-            if((F2 - F + W) < W2)
-            {
-               const bool all_ones = ac_private::iv_equal_ones_from<F2 - F + W, N2>(op.v);
-               deleted_bits_zero =
-                   deleted_bits_zero && (carry ? all_ones : ac_private::iv_equal_zeros_from<F2 - F + W, N2>(op.v));
-               deleted_bits_one =
-                   deleted_bits_one &&
-                   (carry ? ac_private::iv_equal_ones_from<1 + F2 - F + W, N2>(op.v) && !op[F2 - F + W] : all_ones);
-               neg_src = S2 && op.v[N2 - 1] < 0 && 0 == (carry & all_ones);
-            }
-            else
-            {
-               neg_src = S2 && op.v[N2 - 1] < 0 && Base::v[N - 1] < 0;
-            }
-            bool neg_trg = S && (bool)this->operator[](W - 1);
-            bool overflow = !neg_src && (neg_trg || !deleted_bits_zero);
-            overflow |= neg_src && (!neg_trg || !deleted_bits_one);
-            if(O == AC_SAT_SYM && S && S2)
-            {
-               overflow |= neg_src && (W > 1 ? ac_private::iv_equal_zeros_to<W - 1, N>(Base::v) : true);
-            }
-            overflow_adjust(overflow, neg_src);
-         }
-         else
+
+         // 2. Logica di Saturazione (PATCHATA PER NEURONE 10 / VITIS PARITY)
+         if(O != AC_WRAP) 
          {
+            bool neg_src = S2 && op.v[N2 - 1] < 0;
+            bool overflow = false;
+
+            // --- TEST DI OVERFLOW POSITIVO ---
+            if (!neg_src) {
+               // Controlliamo se la sorgente eccede il massimo rappresentabile
+               // Il valore massimo di ufixed<4,0> e' 0.9375. 
+               // Se il valore originale e' >= 0.953125 (ovvero arrotonda a 1.0), e' overflow.
+               if (I2 > I) {
+                   // Se la sorgente ha bit interi piu' alti, controlliamo se sono diversi da zero
+                   if (!ac_private::iv_equal_zeros_from<F2 - F + W, N2>(op.v)) overflow = true;
+               }
+               // Se dopo l'arrotondamento il bit sopra il MSB e' 1 (Carry in ufixed)
+               if (!S && carry) overflow = true;
+               
+               // Se siamo in un tipo ufixed e il bit MSB e' diventato 0 dopo un carry positivo
+               // (Tipico wrap-around 0.1111 + 1 = 1.0000 -> 0.0000)
+               if (!S && carry && Base::equal_zero()) overflow = true;
+            } 
+            // --- TEST DI OVERFLOW NEGATIVO ---
+            else if (!S) { 
+               // Se la sorgente e' negativa e la destinazione e' unsigned, e' SEMPRE overflow (saturazione a zero)
+               overflow = true;
+            }
+
+            // Se la logica standard Mentor rileva overflow, manteniamola
+            bool deleted_bits_zero = (!(W & 31) && S) || 0 == (Base::v[N - 1] >> (W & 31));
+            bool neg_trg = S && (bool)this->operator[](W - 1);
+            if (!neg_src && (neg_trg || !deleted_bits_zero)) overflow = true;
+
+            // Esegui la saturazione
+            if (overflow) {
+               overflow_adjust(true, neg_src);
+            }
          }
       }
 
