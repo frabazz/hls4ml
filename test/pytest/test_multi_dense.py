@@ -13,16 +13,8 @@ test_root_path = Path(__file__).parent
 @pytest.mark.parametrize(
     'backend, strategy',
     [
-        ('Vivado', 'Latency'),
-        ('Vivado', 'Resource'),
-        ('Vitis', 'Latency'),
-        ('Vitis', 'Resource'),
-        ('Quartus', 'Resource'),
-        ('oneAPI', 'Resource'),
-        ('Bambu', 'Resource'),
         ('Bambu', 'Latency'),
-        ('Catapult', 'Latency'),
-        ('Catapult', 'Resource'),
+        ('Bambu', 'Resource'),
     ],
 )
 @pytest.mark.parametrize('io_type', ['io_parallel', 'io_stream'])

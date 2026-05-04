@@ -36,19 +36,6 @@ warnings.filterwarnings('ignore', message='numpy.ufunc size changed')
 test_root_path = Path(__file__).parent
 example_model_path = (test_root_path / '../../example-models').resolve()
 
-@pytest.fixture(autouse=True)
-def set_all_seeds():
-    seed = 42
-    import random
-    import numpy as np
-    import tensorflow as tf
-    
-    random.seed(seed)
-    np.random.seed(seed)
-    tf.keras.utils.set_random_seed(seed) # Fondamentale per gli inizializzatori dei pesi
-    # Forza TF a girare in modo deterministico (opzionale ma consigliato per debug estremo)
-    tf.config.experimental.enable_op_determinism()
-
 @pytest.fixture(scope='module')
 def get_jettagging_data():
     """
@@ -171,11 +158,6 @@ def test_single_dense_activation_exact(test_case_id, randX_100_16, bits, alpha, 
     model.compile()
 
     config = hls4ml.utils.config_from_keras_model(model, granularity='name', backend=backend)
-    config['Model']['Precision']['accum'] = 'ap_fixed<16,6,AP_RND,AP_SAT>'
-    config['LayerName']['fc1']['Precision']['accum'] = 'ap_fixed<16,6,AP_RND,AP_SAT>'
-    
-    # Se vuoi essere sicuro al 100%, forza anche il risultato dello strato
-    config['LayerName']['fc1']['Precision']['result'] = 'ap_fixed<16,6,AP_RND,AP_SAT>'
     output_dir = str(test_root_path / test_case_id)
 
     bit_exact = alpha == 1
