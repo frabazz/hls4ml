@@ -34,11 +34,11 @@ void dense_latency(data_T data[CONFIG_T::n_in], res_T res[CONFIG_T::n_out],
 
 // Do the matrix-multiply
 Product1:
-    #pragma clang loop unroll(full)
+    //#pragma clang loop unroll(full)
     for (int ii = 0; ii < CONFIG_T::n_in; ii++) {
         cache = data[ii];
     Product2:
-        #pragma clang loop unroll(full)
+        //  #pragma clang loop unroll(full)
         for (int jj = 0; jj < CONFIG_T::n_out; jj++) {
             int index = ii * CONFIG_T::n_out + jj;
             mult[index] = CONFIG_T::template product<data_T, typename CONFIG_T::weight_t>::product(cache, weights[index]);
@@ -47,17 +47,17 @@ Product1:
 
 // Initialize accumulator with input biases
 ResetAccum:
-    #pragma clang loop unroll(full)
+    //#pragma clang loop unroll(full)
     for (int iacc = 0; iacc < CONFIG_T::n_out; iacc++) {
         acc[iacc] = (typename CONFIG_T::accum_t)biases[iacc];
     }
 
 // Accumulate multiplication result
 Accum1:
-    #pragma clang loop unroll(full)
+    //#pragma clang loop unroll(full)
     for (int ii = 0; ii < CONFIG_T::n_in; ii++) {
     Accum2:
-        #pragma clang loop unroll(full)
+      //  #pragma clang loop unroll(full)
         for (int jj = 0; jj < CONFIG_T::n_out; jj++) {
             int index = ii * CONFIG_T::n_out + jj;
             acc[jj] += mult[index];
@@ -66,7 +66,7 @@ Accum1:
 
 // Cast to "res_t" type
 Result:
-    #pragma clang loop unroll(full)
+    // #pragma clang loop unroll(full)
     for (int ires = 0; ires < CONFIG_T::n_out; ires++) {
         // res[ires] = (res_T) (acc[ires]);
         res[ires] = cast<data_T, res_T, CONFIG_T>(acc[ires]);
