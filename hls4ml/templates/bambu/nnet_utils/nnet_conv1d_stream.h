@@ -35,7 +35,10 @@ void conv_1d_encoded_cl(hls::stream<data_T> &data, hls::stream<res_T> &res,
         //#pragma HLS STREAM variable=data_window[i_out] depth=win_depth
     }
 
-    const ap_uint<CONFIG_T::filt_width> (&pixels)[CONFIG_T::min_width] = CONFIG_T::pixels;
+    //const is not supported by bambu csroa
+    //const ap_uint<CONFIG_T::filt_width> (&pixels)[CONFIG_T::min_width] = CONFIG_T::pixels;
+
+    ap_uint<CONFIG_T::filt_width> pixels[CONFIG_T::min_width];
     #pragma HLS ARRAY_PARTITION variable=pixels complete
 
     res_T res_pack;
