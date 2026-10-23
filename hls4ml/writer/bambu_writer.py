@@ -237,6 +237,10 @@ class BambuWriter(Writer):
                     if self._should_emit_array_partition_pragma():
                         out += f'{indent}{self._make_array_pragma(var)}\n'
                     out += '\n'
+            # Weight partitions requested by TransformTypes (block partition of the Resource kernels)
+            for weight in layer.get_weights():
+                if getattr(weight, 'pragma', None) and self._should_emit_array_partition_pragma():
+                    out += f'{indent}{self._make_array_pragma(weight)}\n'
         return out
 
     def _emit_layer_calls(self, model, indent='    '):
