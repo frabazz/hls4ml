@@ -302,6 +302,10 @@ class BambuWriter(Writer):
                                     if self._should_emit_array_partition_pragma():
                                         newline += '    ' + self._make_array_pragma(var) + '\n'
                                     newline += '\n'
+                    # Weight partitions requested by TransformTypes (block partition of the Resource kernels)
+                    for weight in layer.get_weights():
+                        if getattr(weight, 'pragma', None) and self._should_emit_array_partition_pragma():
+                            newline += '    ' + self._make_array_pragma(weight) + '\n'
                 for layer in model.get_layers():
                     func = layer.get_attr('function_cpp', None)
                     if func:
