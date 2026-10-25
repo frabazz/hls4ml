@@ -222,12 +222,18 @@ class BambuWriter(Writer):
         any sub-function call in the top-function body, so they live in the
         same block as the layer calls.
         """
+        from hls4ml.backends.bambu.bambu_types import BambuInplaceStreamVariableDefinition
+
         model_inputs = model.get_input_variables()
         model_outputs = model.get_output_variables()
         out = ''
         for layer in model.get_layers():
             for var in layer.get_variables():
                 if var in model_inputs or var in model_outputs:
+                    continue
+                # A local reference to a channel becomes a slot holding its address, which bambu
+                # rejects: the calls use the original stream instead of declaring the alias.
+                if isinstance(var, BambuInplaceStreamVariableDefinition):
                     continue
                 def_cpp = var.definition_cpp()
                 if def_cpp is None:
@@ -245,6 +251,17 @@ class BambuWriter(Writer):
 
     def _emit_layer_calls(self, model, indent='    '):
         """Emit the per-layer `function_cpp` calls."""
+        from hls4ml.backends.bambu.bambu_types import BambuInplaceStreamVariableDefinition
+
+        model_inputs = model.get_input_variables()
+        model_outputs = model.get_output_variables()
+        aliases = {}  # in-place streams (Flatten/Reshape) -> stream they stand for
+        for layer in model.get_layers():
+            for var in layer.get_variables():
+                if var in model_inputs or var in model_outputs:
+                    continue
+                if isinstance(var, BambuInplaceStreamVariableDefinition):
+                    aliases[var.name] = aliases.get(var.input_var.name, var.input_var.name)
         out = ''
         for layer in model.get_layers():
             func = layer.get_attr('function_cpp', None)
@@ -252,6 +269,7 @@ class BambuWriter(Writer):
                 continue
             if not isinstance(func, (list, set)):
                 func = [func]
+            func = [re.sub(r'\b\w+\b', lambda m: aliases.get(m.group(0), m.group(0)), f) for f in func]
             if len(func) == 1:
                 out += f'{indent}{func[0]} // {layer.name}\n'
             else:
