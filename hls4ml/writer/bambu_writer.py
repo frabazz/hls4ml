@@ -252,7 +252,7 @@ class BambuWriter(Writer):
 
                 pipeline_style = model.config.pipeline_style
                 pipeline_ii = model.config.pipeline_ii
-                pipeline_pragma = indent + f'//#pragma HLS {pipeline_style.upper()}'
+                pipeline_pragma = indent + f'#pragma HLS {pipeline_style.upper()}'
                 if pipeline_style == 'pipeline' and pipeline_ii is not None:
                     pipeline_pragma += f' II={pipeline_ii}\n'
                 else:
