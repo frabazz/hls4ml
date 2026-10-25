@@ -41,7 +41,6 @@ void normalize(data_T data[CONFIG_T::n_in], res_T res[CONFIG_T::n_in],
     //   - if we have an unroll factor, limit number of multipliers
     //#pragma HLS PIPELINE II=CONFIG_T::reuse_factor
 
-    // #pragma HLS ARRAY_PARTITION variable=weights complete // remove this line for now, it breaks compression sometimes
     #pragma HLS ARRAY_PARTITION variable=scale complete
     #pragma HLS ARRAY_PARTITION variable=bias complete
 
