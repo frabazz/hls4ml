@@ -80,6 +80,11 @@ def hls_model(keras_model, request, test_case_id):
         ('Vitis', 'io_stream', 'resource'),
         ('Catapult', 'io_stream', 'latency'),
         ('Catapult', 'io_stream', 'resource'),
+        ('Bambu', 'io_parallel', 'resource'),
+        ('Bambu', 'io_parallel', 'latency'),
+        ('Bambu', 'io_stream', 'latency'),
+        ('Bambu', 'io_stream', 'resource'),
+
     ],
     indirect=True,
     ids=[
@@ -97,6 +102,10 @@ def hls_model(keras_model, request, test_case_id):
         'Vitis_io_stream_resource',
         'Catapult_io_stream_latency',
         'Catapult_io_stream_resource',
+        'Bambu_io_parallel_resource',
+        'Bambu_io_parallel_latency',
+        'Bambu_io_stream_latency',
+        'Bambu_io_stream_resource',
     ],
 )
 def test_accuracy(data, keras_model, hls_model):

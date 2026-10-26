@@ -8,6 +8,22 @@
 
 namespace nnet {
 
+// Circular buffer used in place of ::ap_shift_reg for the line buffers. The bambu ap_shift_reg moves all N
+// elements on every shift (one load and one store each), which ends up dominating the conv latency; here a
+// shift is one read and one write. Only shift(val) is used by the line buffers, so this is all they need.
+template <typename DATATYPE, unsigned N> struct ap_shift_reg {
+    DATATYPE shift(DATATYPE val) {
+        DATATYPE res = data[ptr];
+        data[ptr] = val;
+        ptr = (ptr == N - 1) ? 0 : ptr + 1;
+        return res;
+    }
+
+  private:
+    DATATYPE data[N];
+    unsigned ptr = 0;
+};
+
 enum class conv_implementation { linebuffer = 0, encoded = 1 };
 
 // *************************************************
@@ -162,8 +178,8 @@ void kernel_shift_1d(const data_T &in_elem,
     // Shift kernel_window by one step to the left (manual shift operation)
     static const int filt_width = CONFIG_T::filt_width - 1;
 KernelShiftWidth:
+    #pragma clang loop unroll(full) // Vitis: #pragma HLS PIPELINE II = 1
     for (int i_iw = 0; i_iw < filt_width; i_iw++) {
-        //#pragma HLS PIPELINE II = 1
     KernelShiftChannel:
         #pragma clang loop unroll(full)
         for (unsigned i_ic = 0; i_ic < CONFIG_T::n_chan; i_ic++) {
@@ -192,11 +208,13 @@ void kernel_shift_2d(
     // Shift kernel_window by one step to the left (manual shift operation)
     static const int filt_width = CONFIG_T::filt_width - 1;
 KernelShiftWidth:
+    #pragma clang loop unroll(full) // Vitis: #pragma HLS PIPELINE II = 1
     for (int i_iw = 0; i_iw < filt_width; i_iw++) {
-        //#pragma HLS PIPELINE II = 1
     KernelShiftHeight:
+        #pragma clang loop unroll(full)
         for (unsigned i_ih = 0; i_ih < CONFIG_T::filt_height; i_ih++) {
         KernelShiftChannel:
+            #pragma clang loop unroll(full)
             for (unsigned i_ic = 0; i_ic < CONFIG_T::n_chan; i_ic++) {
                 // Shift every element in kernel_window to the left
                 kernel_window[i_ih * CONFIG_T::filt_width * CONFIG_T::n_chan + i_iw * CONFIG_T::n_chan + i_ic] =
@@ -212,6 +230,7 @@ KernelPushHeight:
     for (int i_ih = 0; i_ih < CONFIG_T::filt_height; i_ih++) {
         //#pragma HLS UNROLL
     KernelPushChannel:
+        #pragma clang loop unroll(full)
         for (int i_ic = 0; i_ic < CONFIG_T::n_chan; i_ic++) {
             kernel_window[lastheight + i_ih * CONFIG_T::filt_width * CONFIG_T::n_chan + i_ic] = shift_buffer[i_ih][i_ic];
         }
@@ -241,6 +260,7 @@ UpdateBuffer:
     }
 
 LineBufferDataIn:
+    #pragma clang loop unroll(full) // Vitis: the whole function is pipelined
     for (int i_ic = 0; i_ic < CONFIG_T::n_chan; i_ic++) {
     // Shift the shift buffer into the line buffer
     LineBufferShift:
@@ -264,7 +284,9 @@ void compute_output_buffer_2d(
     hls::stream<res_T> &res_stream,
     typename CONFIG_T::weight_t weights[CONFIG_T::kernel_size * CONFIG_T::n_chan * CONFIG_T::n_filt],
     typename CONFIG_T::bias_t biases[CONFIG_T::n_filt]) {
-    #pragma HLS INLINE OFF
+    // Keep this inlined with bambu: it writes res_stream from inside the conv, and bambu doesn't handle a
+    // stream write from a function nested in a dataflow module (the hls4ml regression in PandA does the same).
+    //#pragma HLS INLINE OFF
 
     // Thresholds
     const static int lShiftX = CONFIG_T::filt_width - 1;
@@ -335,7 +357,9 @@ void compute_output_buffer_1d(
     const data_T &in_elem, hls::stream<res_T> &res_stream,
     typename CONFIG_T::weight_t weights[CONFIG_T::kernel_size * CONFIG_T::n_chan * CONFIG_T::n_filt],
     typename CONFIG_T::bias_t biases[CONFIG_T::n_filt]) {
-    #pragma HLS INLINE OFF
+    // Keep this inlined with bambu: it writes res_stream from inside the conv, and bambu doesn't handle a
+    // stream write from a function nested in a dataflow module (the hls4ml regression in PandA does the same).
+    //#pragma HLS INLINE OFF
 
     // Thresholds
     const static int lShiftX = CONFIG_T::filt_width - 1;
