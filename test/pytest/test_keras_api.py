@@ -224,6 +224,8 @@ padds_options = ['same', 'valid']
         ('Vitis', 'Latency'),
         ('Quartus', 'Resource'),
         ('oneAPI', 'Resource'),
+        ('Bambu', 'Resource'),
+        ('Bambu', 'Latency')
     ],
 )
 @pytest.mark.parametrize('io_type', ['io_parallel', 'io_stream'])
@@ -340,7 +342,7 @@ def test_conv2d(test_case_id, chans, padds, backend, strategy, io_type, synthesi
 
 
 # Currently only Vivado and Vitis is supported for io_stream.
-@pytest.mark.parametrize('backend', ['Vivado', 'Vitis'])
+@pytest.mark.parametrize('backend', ['Vivado', 'Vitis', 'Bambu'])
 @pytest.mark.parametrize('io_type', ['io_stream'])
 def test_depthwise2d(test_case_id, backend, io_type, synthesis_config):
     """
@@ -372,7 +374,7 @@ def test_depthwise2d(test_case_id, backend, io_type, synthesis_config):
 
 
 # Currently only Vivado and Vitis is supported for io_stream.
-@pytest.mark.parametrize('backend', ['Vivado', 'Vitis'])
+@pytest.mark.parametrize('backend', ['Vivado', 'Vitis', 'Bambu'])
 @pytest.mark.parametrize('io_type', ['io_stream'])
 def test_depthwise1d(test_case_id, backend, io_type, synthesis_config):
     """
