@@ -260,6 +260,7 @@ UpdateBuffer:
     }
 
 LineBufferDataIn:
+    #pragma clang loop unroll(full) // Vitis: the whole function is pipelined
     for (int i_ic = 0; i_ic < CONFIG_T::n_chan; i_ic++) {
     // Shift the shift buffer into the line buffer
     LineBufferShift:

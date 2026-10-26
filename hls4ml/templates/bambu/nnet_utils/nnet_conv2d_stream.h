@@ -75,7 +75,9 @@ void conv_2d_buffer_cl(
 
     static ap_shift_reg<typename data_T::value_type, CONFIG_T::in_width> line_buffer[MAX(CONFIG_T::filt_height - 1, 1)]
                                                                                     [CONFIG_T::n_chan];
-    #pragma HLS ARRAY_PARTITION variable = line_buffer complete dim = 2
+    // dim = 0 (Vitis uses dim = 2): every row of every channel is a separate object, so bambu keeps each
+    // line buffer as its own small memory instead of an array of whole ap_shift_reg structs as wide words
+    #pragma HLS ARRAY_PARTITION variable = line_buffer complete dim = 0
 
     if (CONFIG_T::strategy == nnet::resource_unrolled && CONFIG_T::reuse_factor > 1) {
         //#pragma HLS allocation instances=compute_output_buffer_1d limit=1 function
