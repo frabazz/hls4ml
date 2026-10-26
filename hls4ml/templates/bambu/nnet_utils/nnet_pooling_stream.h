@@ -235,7 +235,9 @@ void pooling2d_buffer_cl(hls::stream<data_T> &data, hls::stream<res_T> &res) {
 
     static ap_shift_reg<typename data_T::value_type, CONFIG_T::in_width> line_buffer[MAX(CONFIG_T::pool_height - 1, 1)]
                                                                                     [CONFIG_T::n_filt];
-    #pragma HLS ARRAY_PARTITION variable = line_buffer complete dim = 2
+    // dim = 0 (Vitis uses dim = 2): every row of every channel is a separate object, so bambu keeps each
+    // line buffer as its own small memory instead of an array of whole ap_shift_reg structs as wide words
+    #pragma HLS ARRAY_PARTITION variable = line_buffer complete dim = 0
 
 ReadInputHeight:
     for (unsigned i_ih = 0; i_ih < CONFIG_T::in_height; i_ih++) {
