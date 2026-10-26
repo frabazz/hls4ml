@@ -8,6 +8,22 @@
 
 namespace nnet {
 
+// Circular buffer used in place of ::ap_shift_reg for the line buffers. The bambu ap_shift_reg moves all N
+// elements on every shift (one load and one store each), which ends up dominating the conv latency; here a
+// shift is one read and one write. Only shift(val) is used by the line buffers, so this is all they need.
+template <typename DATATYPE, unsigned N> struct ap_shift_reg {
+    DATATYPE shift(DATATYPE val) {
+        DATATYPE res = data[ptr];
+        data[ptr] = val;
+        ptr = (ptr == N - 1) ? 0 : ptr + 1;
+        return res;
+    }
+
+  private:
+    DATATYPE data[N];
+    unsigned ptr = 0;
+};
+
 enum class conv_implementation { linebuffer = 0, encoded = 1 };
 
 // *************************************************
