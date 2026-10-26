@@ -264,7 +264,9 @@ void compute_output_buffer_2d(
     hls::stream<res_T> &res_stream,
     typename CONFIG_T::weight_t weights[CONFIG_T::kernel_size * CONFIG_T::n_chan * CONFIG_T::n_filt],
     typename CONFIG_T::bias_t biases[CONFIG_T::n_filt]) {
-    #pragma HLS INLINE OFF
+    // Keep this inlined with bambu: it writes res_stream from inside the conv, and bambu doesn't handle a
+    // stream write from a function nested in a dataflow module (the hls4ml regression in PandA does the same).
+    //#pragma HLS INLINE OFF
 
     // Thresholds
     const static int lShiftX = CONFIG_T::filt_width - 1;
@@ -335,7 +337,9 @@ void compute_output_buffer_1d(
     const data_T &in_elem, hls::stream<res_T> &res_stream,
     typename CONFIG_T::weight_t weights[CONFIG_T::kernel_size * CONFIG_T::n_chan * CONFIG_T::n_filt],
     typename CONFIG_T::bias_t biases[CONFIG_T::n_filt]) {
-    #pragma HLS INLINE OFF
+    // Keep this inlined with bambu: it writes res_stream from inside the conv, and bambu doesn't handle a
+    // stream write from a function nested in a dataflow module (the hls4ml regression in PandA does the same).
+    //#pragma HLS INLINE OFF
 
     // Thresholds
     const static int lShiftX = CONFIG_T::filt_width - 1;
