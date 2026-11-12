@@ -189,12 +189,16 @@ void compute_pool_buffer_2d(const data_T &in_elem,
 
     // Can compute pooling output
     if ((sX - lShiftX) == 0 && (sY - lShiftY) == 0 && pY > lShiftY - 1 && pX > lShiftX - 1) {
+    // Unrolled as Vitis does through the PIPELINE of ReadInputWidth: rolled, kernel_data and res_pack are indexed at
+    // run time, and bambu reads the partitioned window through the memory bus shared by the dataflow modules.
     FiltLoop:
+        #pragma clang loop unroll(full)
         for (unsigned i_ic = 0; i_ic < CONFIG_T::n_filt; i_ic++) {
         //#pragma HLS PIPELINE
 
         // Retrieve data for current channel
         PoolLoop:
+            #pragma clang loop unroll(full)
             for (unsigned i_ihw = 0; i_ihw < CONFIG_T::pool_height * CONFIG_T::pool_width; i_ihw++) {
                 pool_window[i_ihw] = kernel_data[i_ihw * CONFIG_T::n_filt + i_ic];
             }
