@@ -43,12 +43,26 @@ InitAccum:
         acc[iacc] = (typename CONFIG_T::accum_t)biases[iacc];
     }
 
+    // An iteration ir reads data[ir + rufactor * k], k = 0 .. nin / rufactor - 1 (a valid RF <= n_in divides n_in).
+    // With data partitioned, bambu reads data[ir + rufactor * k] through a pointer that can point to several
+    // partitions, and so through the memory bus, which the dataflow modules share without arbitration: two convs
+    // reading in the same cycle get each other's data. data is copied with constant indices into nin / rufactor
+    // banks of rufactor elements, and data_b[k][ir], with k a constant once MultLoop is unrolled, is a direct read.
+    const int nbanks = nin / rufactor;
+    data_T data_b[CONFIG_T::n_in / CONFIG_T::reuse_factor][CONFIG_T::reuse_factor];
+    #pragma HLS ARRAY_PARTITION variable=data_b complete dim=1
+BankData:
+    #pragma clang loop unroll(full)
+    for (int i = 0; i < nin; i++) {
+        data_b[i / rufactor][i % rufactor] = data[i];
+    }
+
 ReuseLoop:
     for (int ir = 0; ir < rufactor; ir++) {
         //#pragma HLS PIPELINE II=1 rewind
 
         int w_index = ir;
-        int in_index = ir;
+        int in_bank = 0;
         int out_index = 0;
         int acc_step = 0;
 
@@ -57,15 +71,32 @@ ReuseLoop:
         for (int im = 0; im < block_factor; im++) {
             //#pragma HLS UNROLL
 
+            // weights[w_index], w_index = im * rufactor + ir, is in bank im of the block partition of the weights.
+            // CSROA proves it only while the reuse loop has no more iterations than there are banks; past that the
+            // bank is picked at run time and the read goes through the memory bus too, so the weight is chosen among
+            // reads with constant indices instead.
+            typename CONFIG_T::weight_t weight;
+            if (rufactor <= block_factor) {
+                weight = weights[w_index];
+            } else {
+                weight = weights[im * rufactor];
+            WeightSelect:
+                #pragma clang loop unroll(full)
+                for (int r = 1; r < rufactor; r++) {
+                    if (r == ir) {
+                        weight = weights[im * rufactor + r];
+                    }
+                }
+            }
+
             acc[out_index] += static_cast<typename CONFIG_T::accum_t>(
-                CONFIG_T::template product<data_T, typename CONFIG_T::weight_t>::product(data[in_index], weights[w_index]));
+                CONFIG_T::template product<data_T, typename CONFIG_T::weight_t>::product(data_b[in_bank][ir], weight));
 
             // Increment w_index
             w_index += rufactor;
-            // Increment in_index
-            in_index += rufactor;
-            if (in_index >= nin) {
-                in_index = ir;
+            // Next bank (in_index += rufactor, back to ir past n_in)
+            if (++in_bank == nbanks) {
+                in_bank = 0;
             }
             // Increment out_index
             if (acc_step + 1 >= multscale) {
